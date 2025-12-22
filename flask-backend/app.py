@@ -3,13 +3,16 @@ from flask_cors import CORS
 import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import linear_kernel
+from sklearn.metrics. pairwise import linear_kernel
+import os
 
 app = Flask(__name__)
 CORS(app)
 
-# Load the dataset
-df = pd.read_csv('C:/Users/Dylan/Desktop/Forward College/game_recommender_backend/flask-backend/data/recommendation_data.csv')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CSV_PATH = os.path.join(BASE_DIR, 'data', 'recommendation_data.csv')
+
+df = pd.read_csv(CSV_PATH)
 
 # Helper function for normalization
 def normalize(series):
@@ -37,7 +40,7 @@ matrix_combined_with_features = np.hstack((matrix_combined, additional_features)
 cosine_sim = linear_kernel(matrix_combined_with_features, matrix_combined_with_features)
 
 # Create an index for game names
-indices = pd.Series(df.index, index=df['name'].str.lower()).drop_duplicates()
+indices = pd.Series(df. index, index=df['name']. str.lower()).drop_duplicates()
 
 # Generalized label mapping function
 def map_label(value, thresholds, labels):
@@ -70,7 +73,7 @@ df['price'] = df['price_myr'].apply(price_label)
 def recommend():
     try:
         data = request.json
-        selected_game = data.get("selectedGame", "").strip().lower()
+        selected_game = data. get("selectedGame", "").strip().lower()
         
         if not selected_game or selected_game not in indices:
             return jsonify({"error": "Game not found"}), 404
@@ -86,16 +89,32 @@ def recommend():
 
         return jsonify({"recommendations": recommendations.to_dict(orient="records")}), 200
 
-    except Exception as e:
+    except Exception as e: 
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
+# Updated endpoint - only returns game names for autocomplete
 @app.route('/games', methods=['GET'])
 def get_games():
     try:
-        games_list = df[['name', 'release_date', 'price', 'tags', 'genres', 'popularity', 'reviews']].to_dict(orient="records")
+        # Only return the game names, sorted alphabetically
+        games_list = sorted(df['name'].unique().tolist())
         return jsonify({"games": games_list}), 200
     except Exception as e:
         return jsonify({"error": f"Failed to fetch games: {str(e)}"}), 500
 
-if __name__ == '__main__':
+# New endpoint - search games by query (optional, for better performance)
+@app.route('/games/search', methods=['GET'])
+def search_games():
+    try:
+        query = request.args.get('q', '').lower()
+        if not query:
+            return jsonify({"games": []}), 200
+        
+        # Filter games that contain the query string
+        filtered_games = df[df['name'].str.lower().str.contains(query, na=False)]['name'].unique().tolist()
+        return jsonify({"games": filtered_games[: 50]}), 200  # Limit to 50 results
+    except Exception as e: 
+        return jsonify({"error":  f"Failed to search games: {str(e)}"}), 500
+
+if __name__ == '__main__': 
     app.run(debug=True)
