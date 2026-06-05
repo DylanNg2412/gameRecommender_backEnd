@@ -6,6 +6,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics. pairwise import linear_kernel
 from scipy.sparse import hstack, csr_matrix
 import os
+import re
 
 app = Flask(__name__)
 CORS(app)
@@ -59,7 +60,28 @@ df['popularity'] = df['peak_ccu'].apply(lambda x: map_label(x, popularity_thresh
 df['reviews'] = df['user_reviews_total'].apply(lambda x: map_label(x, reviews_thresholds, reviews_labels))
 
 # Ensure price is numeric and apply user-friendly labels
-df['price_myr'] = pd.to_numeric(df['price_myr'], errors='coerce').fillna(0)
+def parse_price(val):
+    # handle missing values
+    if pd.isna(val):
+        return 0.0
+    s = str(val).strip()
+    if not s:
+        return 0.0
+    # common free markers
+    if s.lower() in ('free', 'free to play'):
+        return 0.0
+    # remove currency prefix/symbols and commas
+    s = s.replace('RM', '').replace(',', '').strip()
+    # extract first numeric occurrence
+    m = re.search(r"(\d+(?:\.\d+)?)", s)
+    if m:
+        try:
+            return float(m.group(1))
+        except ValueError:
+            return 0.0
+    return 0.0
+
+df['price_myr'] = df['price_myr'].apply(parse_price)
 
 def price_label(price):
     return 'Free' if price == 0 else f"RM{price:.2f}"
