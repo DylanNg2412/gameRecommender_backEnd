@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics. pairwise import linear_kernel
+from scipy.sparse import hstack, csr_matrix
 import os
 
 app = Flask(__name__)
@@ -27,17 +28,14 @@ def compute_tfidf(column):
 df['peak_ccu'] = normalize(df['peak_ccu'])
 df['user_reviews_total'] = normalize(df['user_reviews_total'])
 
-# Compute TF-IDF matrices
-dense_matrix_tag = compute_tfidf('tags').toarray()
-dense_matrix_genre = compute_tfidf('genres').toarray()
+# Compute sparse feature matrices to avoid building a huge dense similarity table at startup
+tfidf_tag = compute_tfidf('tags')
+tfidf_genre = compute_tfidf('genres')
 
-# Combine all matrices
-matrix_combined = np.hstack((dense_matrix_tag, dense_matrix_genre))
-additional_features = df[['peak_ccu', 'user_reviews_total']].fillna(0).to_numpy()
-matrix_combined_with_features = np.hstack((matrix_combined, additional_features))
-
-# Compute cosine similarity
-cosine_sim = linear_kernel(matrix_combined_with_features, matrix_combined_with_features)
+# Combine all matrices as sparse data
+matrix_combined = hstack((tfidf_tag, tfidf_genre)).tocsr()
+additional_features = csr_matrix(df[['peak_ccu', 'user_reviews_total']].fillna(0).to_numpy())
+matrix_combined_with_features = hstack((matrix_combined, additional_features)).tocsr()
 
 # Create an index for game names
 indices = pd.Series(df. index, index=df['name']. str.lower()).drop_duplicates()
@@ -78,9 +76,10 @@ def recommend():
         if not selected_game or selected_game not in indices:
             return jsonify({"error": "Game not found"}), 404
 
-        # Get recommendations
+        # Get recommendations by comparing one sparse row against the dataset
         idx = indices[selected_game]
-        sim_scores = sorted(list(enumerate(cosine_sim[idx])), key=lambda x: x[1], reverse=True)[1:11]
+        similarity_scores = linear_kernel(matrix_combined_with_features[idx], matrix_combined_with_features).flatten()
+        sim_scores = sorted(list(enumerate(similarity_scores)), key=lambda x: x[1], reverse=True)[1:11]
         game_indices = [i[0] for i in sim_scores]
         max_score = max(sim_scores, key=lambda x: x[1])[1]
 
